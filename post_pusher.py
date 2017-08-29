@@ -144,7 +144,13 @@ import getopt
 app_host = "http://localhost:8675"
 file_server = "http://localhost"
 width = 4
-opts, args = getopt.getopt(sys.argv[1:], "f:h:w:u:v:")
+
+try:
+    opts, args = getopt.getopt(sys.argv[1:], "f:h:w:u:v:")
+except:
+    usage()
+    sys.exit(1)
+
 one_group = ""
 ok_args = 1
 validation_level = 1
@@ -166,11 +172,13 @@ for o, a in opts:
         ok_args = 0
     else:
         usage()
-        raise Exception('unknown flag')
+        print('unknown flag', o)
+        sys.exit(1)
 
 if len(args) != ok_args :
     usage()
-    raise Exception("saw {} args, expected {}".format(len(args), ok_args))
+    print("saw {} args, expected {}".format(len(args), ok_args))
+    sys.exit(1)
 
 if ok_args == 1:
     file_list = args[0]

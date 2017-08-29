@@ -189,7 +189,12 @@ def usage():
 
 def get_options():
     options = { 'port': 8675 , 'workers': 0}
-    opts, args = getopt.getopt(sys.argv[1:], "p:w:")
+    try:
+        opts, args = getopt.getopt(sys.argv[1:], "p:w:")
+    except:
+        usage()
+        sys.exit(1)
+
     ok_args = 0
     for o, a in opts:
         if o == "-p":
@@ -201,7 +206,8 @@ def get_options():
             raise Exception('unknown flag')
     if len(args) != ok_args :
         usage()
-        raise Exception("saw {} args, expected {}".format(len(args), ok_args))
+        print("saw {} args, expected {}".format(len(args), ok_args))
+        sys.exit(1)
     return options
 
 def main():
