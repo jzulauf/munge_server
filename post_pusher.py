@@ -48,28 +48,31 @@ class Poster:
 
         return result
         
-def group_urls(url_file):
+def create_grouped_urls(file_server, files):
     random.seed(42,2) # For consistant results
     groups = []
     current_group = []
-    for url in url_file:
-        url = url.rstrip()
+    for f in files:
+        url = file_server + "/" + f.rstrip().strip()
         print("Url:", url)
         if random.randint(0,2) :
+            # Two thirds of the time we'll add a url to the current group
+            # to get a pseudo random variation in the number of urls
             current_group.append(url)
         else:
             groups.append(", ".join(current_group))
             current_group = [ url ]
     if current_group:
+        print("Group:", groups[-1])
         groups.append(", ".join(current_group))
 
-    print("Groups", groups)
+    #print("Groups", groups)
     return groups
         
 
-def main(post_url, url_file, num_threads):
-    urls = open(url_file,"r")
-    groups = group_urls(urls)
+def main(post_url, file_server, file_list, num_threads):
+    files = open(file_list,"r")
+    groups = create_grouped_urls(file_server, files)
     pool = CreatePool(num_threads)
     # Lambda really should work here....
     #poster = Poster(post_url)
@@ -78,19 +81,30 @@ def main(post_url, url_file, num_threads):
     print("\n".join(results))
 
 
+def usage():
+    print("Usage: {} <opts> file_list", sys.argv[0])
+    print("\nOptions")
+    print("    -f file_server    the URL of the root of the file_list")
+    print("    -h app_server     the URL file munging app server")
+    print("    -w num_threads    the paralell width for post creation")
+
 import getopt
-host = "http://localhost:8675"
+app_host = "http://localhost:8675"
+file_server = "http://localhost"
 width = 4
-opts, args = getopt.getopt(sys.argv[1:], "h:w:")
-url_file = args[0]
+opts, args = getopt.getopt(sys.argv[1:], "f:h:w:")
+file_list = args[0]
 if len(args) != 1 :
     raise Exception('missing url file arg, or too many')
+
 for o, a in opts:
     if o == "-h":
-        host = a
+        app_host = a
     elif o == "-w":
         width = int(a)
+    elif o == "-f":
+        file_server = a
     else:
         raise Exception('unknown flag')
 
-main(host, url_file, width)
+main(app_host, file_server, file_list, width)
