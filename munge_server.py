@@ -1,5 +1,6 @@
 #! /usr/bin/env python3
 
+from multiprocessing import Pool
 from socketserver import ThreadingMixIn
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import urllib.request
@@ -10,6 +11,7 @@ from functools import reduce
 import time
 
 base_time = 0
+pool = None
 def millitime():
     return int(round(time.time() * 1000))
 
@@ -21,6 +23,13 @@ def timestamp():
     global base_time
     return millitime() - base_time
 
+def create_pool(num_threads) :
+    """The pool allows for multiple post to be sent simulataneously"""
+    global pool
+    if num_threads > 0:
+        pool = Pool(num_threads)
+    else:
+        pool = None
 
 def process_url(url):
     url= url.rstrip()
@@ -44,7 +53,7 @@ def process_url(url):
       
     return "".join(munged)
 
-debug_level = 2
+debug_level = 0
 
 class MungedUrl:
     def __init__(self, url):
@@ -142,12 +151,15 @@ class PostHandler(BaseHTTPRequestHandler):
 
         # Compute the response... with a chunk response capable
         # server this should be done chunkwise, but http.server isn't, apparently
-        # Would also be a place to parallelize on chunks (or urls), but I'm not
-        # clear on the thread safety of pool dispatch from within threads, and this
-        # isn't the time to test it
+
         url_list = in_str.split(",")
         if url_list:
-            munged = [ MungedUrl(u) for u in url_list ]
+            # munge the given urls, using the pool if present
+            if pool:
+                munged = pool.map( MungedUrl, url_list )
+            else:
+                munged = [ MungedUrl(u) for u in url_list ]
+
             if all([m.status() for m in munged ]) :
                 code = self.send_success_POST(munged)
             else:
@@ -167,13 +179,39 @@ class ThreadedServer(ThreadingMixIn, HTTPServer):
 
 
 
+import getopt
+def usage():
+    print("Usage:")
+    print("    {} <opts>".format(sys.argv[0]))
+    print("\nOptions")
+    print("    -p port    the port to open for incoming requests")
+    print("    -w workers the number of workers in the pool")
+
+def get_options():
+    options = { 'port': 8675 , 'workers': 0}
+    opts, args = getopt.getopt(sys.argv[1:], "p:w:")
+    ok_args = 0
+    for o, a in opts:
+        if o == "-p":
+           options['port'] = int(a)
+        elif o == "-w":
+            options['workers'] = int(a)
+        else:
+            usage()
+            raise Exception('unknown flag')
+    if len(args) != ok_args :
+        usage()
+        raise Exception("saw {} args, expected {}".format(len(args), ok_args))
+    return options
 
 def main():
+    options = get_options()
     # Not sure if the pool object is thread safe... disable for now
     # Needs to be parameterized, especially vs. ThreadedServer below
     #CreateGlobalPool(2) # Allow each concurrent handler up to two workers.
-    server =  ThreadedServer(('localhost', 8675), PostHandler)
+    server =  ThreadedServer(('localhost', options['port']), PostHandler)
     init_timer()
+    create_pool(options['workers'])
     server.serve_forever()
 
 main()
