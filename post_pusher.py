@@ -92,7 +92,9 @@ def create_grouped_urls(file_server, files):
     groups = []
     current_group = []
     for f in files:
-        url = file_server + "/" + f.rstrip().strip()
+        url = f.rstrip().strip()
+        if file_server:
+            url = file_server + "/" + f.rstrip().strip()
         if debug_level > 1:
             print("Url:", url)
         if random.randint(0,2) :
@@ -131,9 +133,9 @@ def main(post_url, file_server, file_list, num_threads, one_group, validation_le
 
 def usage():
     print("Usage:")
-    print("    {} <opts> file_list".format(sys.argv[0]))
-    print("    {} -u url_list".format(sys.argv[0]))
-    print("\nOptions")
+    print("    {} -a app_host <opts> file_list".format(sys.argv[0]))
+    print("    {} -a app_host -u url_list".format(sys.argv[0]))
+    print("\nOptions:")
     print("    -f file_server    the URL of the root of the file_list")
     print("    -h app_server     the URL file munging app server")
     print("    -w num_threads    the paralell width for post creation")
@@ -141,8 +143,9 @@ def usage():
     print("    -v validation_lvl control the level of testing > 0 for munge testing (default 1)")
 
 import getopt
-app_host = "http://localhost:8675"
-file_server = "http://localhost"
+#app_host = "http://localhost:8675"
+app_host = ""
+file_server = ""
 width = 4
 
 try:
@@ -175,6 +178,10 @@ for o, a in opts:
         print('unknown flag', o)
         sys.exit(1)
 
+if not app_host:
+    usage()
+    print("-a app_host option is required")
+    sys.exit(1)
 if len(args) != ok_args :
     usage()
     print("saw {} args, expected {}".format(len(args), ok_args))

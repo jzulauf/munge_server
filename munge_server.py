@@ -32,7 +32,6 @@ def create_pool(num_threads) :
         pool = None
 
 def process_url(url):
-    url= url.rstrip()
     munged = []
     digits = set(list("0123456789"))
     with urllib.request.urlopen(url) as f:
@@ -57,6 +56,8 @@ debug_level = 0
 
 class MungedUrl:
     def __init__(self, url):
+        self.success = False
+        self.result = ""
         try:
             self.source = url.strip().rstrip()
             self.result = process_url(self.source)
@@ -65,10 +66,10 @@ class MungedUrl:
             self.result = ""
             self.message = "FAILED:{}:{}, {}, at".format(self.source, e.encoding, e.reason, e.start)
 
+        except ValueError as e:
+            self.message = "FAILED:{}:{}".format(self.source, "likely bad URL")
         except Exception as e:
-            self.success = False
-            self.result = ""
-            self.message = "FAILED:{}:{}".format(self.source, e.reason)
+            self.message = "FAILED:{}:{}".format(self.source, "unexpected exception")
         else:
             self.success = True
             self.message = "PASSED:{}".format(self.source)
@@ -140,6 +141,7 @@ class PostHandler(BaseHTTPRequestHandler):
         else:
             stamp = 0
 
+        # Get the payload
         in_length = int(self.headers.get("Content-Length"))
         in_data = self.rfile.read(in_length)
         in_str  = in_data.decode('utf-8')
@@ -151,7 +153,6 @@ class PostHandler(BaseHTTPRequestHandler):
 
         # Compute the response... with a chunk response capable
         # server this should be done chunkwise, but http.server isn't, apparently
-
         url_list = in_str.split(",")
         if url_list:
             # munge the given urls, using the pool if present
@@ -160,13 +161,16 @@ class PostHandler(BaseHTTPRequestHandler):
             else:
                 munged = [ MungedUrl(u) for u in url_list ]
 
+            # All of the url's must succeed for the post to succeed... not clear
+            # how to report partial failure
             if all([m.status() for m in munged ]) :
                 code = self.send_success_POST(munged)
             else:
                 code = self.send_failed_POST(munged)
             
         else:
-            send_failed_POST([])
+            # We can successfully do nothing
+            send_success_POST([])
             code = "NOOP"
 
         if debug_level > 1:
@@ -183,7 +187,7 @@ import getopt
 def usage():
     print("Usage:")
     print("    {} <opts>".format(sys.argv[0]))
-    print("\nOptions")
+    print("\nOptions:")
     print("    -p port    the port to open for incoming requests")
     print("    -w workers the number of workers in the pool")
 
@@ -212,11 +216,10 @@ def get_options():
 
 def main():
     options = get_options()
-    # Not sure if the pool object is thread safe... disable for now
-    # Needs to be parameterized, especially vs. ThreadedServer below
-    #CreateGlobalPool(2) # Allow each concurrent handler up to two workers.
     server =  ThreadedServer(('localhost', options['port']), PostHandler)
+    # Millisecond timer is used to 'tag' debug output
     init_timer()
+    # Creates a pool as a global, used by the PortHandlers
     create_pool(options['workers'])
     server.serve_forever()
 
