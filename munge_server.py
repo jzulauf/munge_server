@@ -12,6 +12,9 @@ import time
 
 base_time = 0
 pool = None
+#  NOTE: This feature was added late, need a better place than a global for this state...
+dedup_set = None
+
 def millitime():
     return int(round(time.time() * 1000))
 
@@ -31,8 +34,9 @@ def create_pool(num_threads) :
     else:
         pool = None
 
-def process_url(url):
+def process_url(url, dedup_set):
     munged = []
+    mset = set()
     digits = set(list("0123456789"))
     with urllib.request.urlopen(url) as f:
         last = ""
@@ -44,11 +48,18 @@ def process_url(url):
         charset = f.headers.get_content_charset("ISO-8859-1") # get the charset if passed
                                                               # or ISO-8859-1 (the official default)
         text = TextIOWrapper(f, encoding=charset)
-        for c in iter(lambda: text.read(1), '') :
-            if c in digits or c == last:
-                continue
-            last = c
-            munged.append(c)
+        if dedup_set:
+            for c in iter(lambda: text.read(1), '') :
+                if not c in digits:
+                    mset.add(c)
+            munged = list(mset)
+            #print("ZZZ DBG mset:", munged)
+        else:
+            for c in iter(lambda: text.read(1), '') :
+                if c in digits or c == last:
+                    continue
+                last = c
+                munged.append(c)
       
     return "".join(munged)
 
@@ -56,11 +67,12 @@ debug_level = 0
 
 class MungedUrl:
     def __init__(self, url):
+        global dedup_set
         self.success = False
         self.result = ""
         try:
             self.source = url.strip().rstrip()
-            self.result = process_url(self.source)
+            self.result = process_url(self.source, dedup_set)
         except UnicodeDecodeError as e:
             self.success = False
             self.result = ""
@@ -98,23 +110,42 @@ class MungedUrl:
     def response(self):
         return self.result if self.status() else self.message
 
+def merge_set_results(munged):
+    s = set()
+    for m in munged:
+        s = s | set(list(m.result))
+
+    #print("ZZZ DBG", "".join(list(s)))
+    return "".join(list(s))
+
 class PostHandler(BaseHTTPRequestHandler):
 
     def send_success_POST(self, munged):
+        global dedup_set
         # Filter out empty results
         munged = [ m for m in munged if m.response() ]
         self.send_response(200)
         self.send_header("Content-Type", "text/plain; charset=utf-8")
         # clean up any duplicates across result boundaries
+        charset = "utf-8"
         if ( len(munged) ):
-            [ munged[i].tidy(munged[i+1]) for i in range(len(munged)-1) ]
-            length = sum([m.length() for m in munged])
+            # tidy up inter URL deduplication
+            if dedup_set:
+                # The "set" style deduplication is much smaller than the mangle style
+                response = merge_set_results(munged)
+            else:
+                [ munged[i].tidy(munged[i+1]) for i in range(len(munged)-1) ]
+                # Doesn't seem to be anyway to avoid storing the whole encoded response
+                # as we need it for length... and it can be big in this dedup style
+                response = "".join([m.response() for m in munged])
         else:
-            length = 0;
+            response = ""
+        response = response.encode(charset)
+        length = len(response)
         self.send_header("Content-Length", str(length))
         self.end_headers()
-        if ( len(munged) ):
-            self.wfile.write("".join([m.response() for m in munged]).encode("utf-8"))
+        if length:
+            self.wfile.write(response)
 
         return "OK"
 
@@ -190,11 +221,12 @@ def usage():
     print("\nOptions:")
     print("    -p port    the port to open for incoming requests")
     print("    -w workers the number of workers in the pool")
+    print("    -M         use the alternate munge")
 
 def get_options():
-    options = { 'port': 8675 , 'workers': 0}
+    options = { 'port': 8675 , 'workers': 0, 'dedup': 'set' }
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "p:w:")
+        opts, args = getopt.getopt(sys.argv[1:], "p:w:M")
     except:
         usage()
         sys.exit(1)
@@ -205,6 +237,8 @@ def get_options():
            options['port'] = int(a)
         elif o == "-w":
             options['workers'] = int(a)
+        elif o == "-M":
+            options['dedup'] = 'mangle'
         else:
             usage()
             raise Exception('unknown flag')
@@ -216,6 +250,8 @@ def get_options():
 
 def main():
     options = get_options()
+    global dedup_set 
+    dedup_set = options['dedup'] == 'set'
     server =  ThreadedServer(('localhost', options['port']), PostHandler)
     # Millisecond timer is used to 'tag' debug output
     init_timer()

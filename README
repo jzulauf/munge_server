@@ -2,7 +2,7 @@ MungeServer README
 
 The MungeServer is a "toy problem" http application server that serves
 intentionally corrupted files according to a specification
-not included by customer request.
+not included by customer request. (and by a "bonus" mangle)
 
 Start per usage below: (recommendation on 4 core system)
     ./munge_server.py -w 3
@@ -16,9 +16,11 @@ Usage:
 Options:
     -p port    the port to open for incoming requests -- default 8675 
     -w workers the number of workers in the pool -- default 0 (no pool)
+    -M         use the alternate munge
 
 To exercise and test the MungeServer, use the PostPusher.  The details
 of the POST request are not included (again by customer request).
+
 
 Name:
    post_pusher.py 
@@ -32,8 +34,11 @@ Options:
     -h app_server     the URL file munging app server
     -w num_threads    the paralell width for post creation
     -u url_list       post one request with the csv url_list given
-    -v validation_lvl control the level of testing > 0 for munge testing (default 1)
+    -v validation_lvl control the level of testing for munge testing
+    -M                use the alternate munge
 
+When using -M, the parameter *must* match in the client and server
+invocations for valdation operations to be valid
 
 Description:
 Accepts as an argument, the name of a file containing pathnames (or URLS),
@@ -64,27 +69,33 @@ server visible location, with the root of the linux tree given as the
 
 Peformance and memory:
 With -w 4 set for both client and server and -v 0 (trivial validation) set
-in the PostPusher the quarter_list runs in < 3m10s on a 4 core Pentium N3750,
+in the PostPusher the quarter_list runs in ~3m on a 4 core Pentium N3750,
 running Ubuntu 16.04LTS, with Apache2 acting as the fileserver.  This case
 comprises 4,952 POST operations from PostPusher with 15,000 server side GET
 operation from MungeServer. The majority of cycles for both server and client
 appear to be correlate with the munging and munge validation operations.
-These are both multitasked -- at URL granuality (server) and request
-granularity (client).
+Munge validation is much slower for "alternate munge" -M operations.
+
+Both the MungeServer and PostPusher are  multitasked -- at URL granuality
+(server) and request granularity (client).
 
 Further testing should be done to determine if native (C/C++) processing
-could effectively reduce the munge/munge check times.
+could effectively reduce the munge or munge validation times.
 
 Per POST memory usage on the MungeServer is likely the most problematic,
-performance element at this time.  Since the http.server class used as
-the base class for the MungeServer (apparently) doesn't support multipart
-respones (though this may be a developer misapprehension), the entire
-munged response must be assembled before responding.  In the case of large
-requests for large files to the MungeServer, memory could come to be an issue.
-
+performance element at this time for the "alternate munge".  Since the
+http.server class used as the base class for the MungeServer (apparently)
+doesn't support multipart respones (though this may be a developer
+misapprehension), the entire munged response must be assembled before
+responding.  In the case of large requests for large files to the
+MungeServer, memory could come to be an issue. For the default munge,
+memory requirements are limited to the unique set of character.
 
 
 If the PostPusher and MungeServer are running the same host,
 consideration should be given to no oversubscribe the available thread.
 in -v 1 mode, the processing load of the PostPusher is comparable per
-URL, to the MungeServer, but much lighter (10%) with -v 0 set.
+URL (for the alternate munge), for the MungeServer, but much lighter
+(10%) with -v 0 set, or the default munge.  In fact, -v has no effect
+for the default munge.
+

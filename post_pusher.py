@@ -38,8 +38,26 @@ def CreatePool(num_threads=0) :
 
     return pool
 
-def test_response(response) : 
-    """Read the response and verify that the content meets the munging criteria"""
+def test_response_set(response) : 
+    """Read the response and verify that the content meets the set munging criteria"""
+    digits = set(list("0123456789"))
+    seen = set()
+    offset = 1
+    for c in iter(lambda: response.read(1), '') :
+        if c in digits:
+            if debug_level > 1:
+                print(":".join(out))
+            return "FAIL: digit at {}:".format(offset)
+        elif c in seen:
+            if debug_level > 1:
+                print(":".join(out))
+            return "FAIL: dupl. at {}:".format(offset)
+        seen.add(c)
+        offset += 1
+    return "PASS"
+
+def test_response_mangle(response) : 
+    """Read the response and verify that the content meets the mangle munging criteria"""
     last = ""
     offset = 1
     digits = set(list("0123456789"))
@@ -57,11 +75,12 @@ def test_response(response) :
         offset += 1
         last = c
     return "PASS"
-      
+
 class Poster:
-    def __init__(self, post_url, validation_level):
+    def __init__(self, post_url, validation_level, dedup_set):
         self.post_url = post_url
         self.do_test = validation_level > 0
+        self.dedup_set = dedup_set
 
     def __call__(self, message):
         call_result =  "FAIL:urlopen"
@@ -73,8 +92,10 @@ class Poster:
             with urllib.request.urlopen(self.post_url, payload) as f:
                 if f.status == 200 :
                     t = TextIOWrapper(f, encoding="utf-8")
-                    if self.do_test:
-                        call_result = test_response(t)
+                    if self.do_test and not self.dedup_set:
+                        call_result = test_response_mangle(t)
+                    elif self.dedup_set:
+                        call_result = test_response_set(t)
                     else:
                         call_result = "PASS:trivial"
                 else:
@@ -82,7 +103,7 @@ class Poster:
         except urllib.error.URLError as e:
             call_result = "FAIL:HTTPError:{}:{}".format(e.reason, e.code)
         except:
-            call_result = "FAIL:unknown:" + sys.exc_info()[0]
+            call_result = "FAIL:unknown:" + str(sys.exc_info()[0])
 
         result =  "{}: {}".format(call_result, message)
         return result
@@ -114,7 +135,7 @@ def create_grouped_urls(file_server, files):
     return groups
         
 
-def main(post_url, file_server, file_list, num_threads, one_group, validation_level):
+def main(post_url, file_server, file_list, num_threads, one_group, validation_level, dedup_set):
     if not one_group:
         files = open(file_list,"r")
         groups = create_grouped_urls(file_server, files)
@@ -127,7 +148,7 @@ def main(post_url, file_server, file_list, num_threads, one_group, validation_le
     # and you can't pickle lambda's apparently
     #poster = Poster(post_url)
     #post = lambda g: poster.post(g)
-    results = pool.map(Poster(post_url,validation_level), groups)
+    results = pool.map(Poster(post_url, validation_level, dedup_set), groups)
     print("\n".join(results))
 
 
@@ -141,6 +162,7 @@ def usage():
     print("    -w num_threads    the paralell width for post creation")
     print("    -u url_list       post one request with the csv url_list given")
     print("    -v validation_lvl control the level of testing > 0 for munge testing (default 1)")
+    print("    -M                use the alternate munge scheme")
 
 import getopt
 #app_host = "http://localhost:8675"
@@ -149,7 +171,7 @@ file_server = ""
 width = 4
 
 try:
-    opts, args = getopt.getopt(sys.argv[1:], "f:h:w:u:v:")
+    opts, args = getopt.getopt(sys.argv[1:], "f:h:w:u:v:M")
 except:
     usage()
     sys.exit(1)
@@ -158,6 +180,7 @@ one_group = ""
 ok_args = 1
 validation_level = 1
 file_list = ""
+dedup_set = True
 
 for o, a in opts:
     if o == "-h":
@@ -173,6 +196,8 @@ for o, a in opts:
         one_group = a
         width = 1
         ok_args = 0
+    elif o == "-M":
+        dedup_set = False
     else:
         usage()
         print('unknown flag', o)
@@ -190,4 +215,4 @@ if len(args) != ok_args :
 if ok_args == 1:
     file_list = args[0]
 
-main(app_host, file_server, file_list, width, one_group, validation_level)
+main(app_host, file_server, file_list, width, one_group, validation_level, dedup_set)
